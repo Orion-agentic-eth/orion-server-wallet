@@ -1,7 +1,11 @@
-const express = require("express");
+import express from "express";
+import axios from "axios";
+import dotenv from "dotenv";
+import { createEncryptionService } from "../src/lib/encryption.js";
+
+dotenv.config();
 const router = express.Router();
-const axios = require("axios");
-require("dotenv").config();
+
 router.post("/data", (req, res) => {
   res.send(`Received data: ${JSON.stringify(req.body)}`);
 });
@@ -24,7 +28,22 @@ router.post("/create-wallet", async (req, res) => {
         },
       }
     );
-    res.json(response.data);
+
+    const encryptionService = await createEncryptionService({
+      nodes: 3,
+      operations: { store: true },
+    });
+    const encryptedWalletId = await encryptionService.encryptPassword(
+      response.data.id
+    );
+    const decryptedWalletId = await encryptionService.decryptPassword(
+      encryptedWalletId
+    );
+
+    // console.log("Encrypted wallet ID:", encryptedWalletId);
+    // console.log("Decrypted wallet ID:", decryptedWalletId);
+
+    res.json({ ...response.data, wallet_id: encryptedWalletId });
   } catch (error) {
     console.log(error);
     res.status(500).send(error.message);
@@ -34,8 +53,15 @@ router.post("/create-wallet", async (req, res) => {
 router.post("/sign-message", async (req, res) => {
   const { wallet_id, message } = req.body;
   try {
+    const encryptionService = await createEncryptionService({ nodes: 3 });
+    const decryptedWalletId = await encryptionService.decryptPassword(
+      wallet_id
+    );
+
+    console.log("Decrypted wallet ID:", decryptedWalletId);
+
     const response = await axios.post(
-      `https://api.privy.io/v1/wallets/${wallet_id}/rpc`,
+      `https://api.privy.io/v1/wallets/${decryptedWalletId}/rpc`,
       {
         chain_type: "ethereum",
         method: "personal_sign",
@@ -64,8 +90,13 @@ router.post("/sign-message", async (req, res) => {
 router.post("/send-transaction", async (req, res) => {
   const { wallet_id, to, value } = req.body;
   try {
+    const encryptionService = await createEncryptionService({ nodes: 3 });
+    const decryptedWalletId = await encryptionService.decryptPassword(
+      wallet_id
+    );
+
     const response = await axios.post(
-      `https://api.privy.io/v1/wallets/${wallet_id}/rpc`,
+      `https://api.privy.io/v1/wallets/${decryptedWalletId}/rpc`,
       {
         method: "eth_sendTransaction",
         caip2: "eip155:11155111",
@@ -172,4 +203,4 @@ router.post("/create-policy", async (req, res) => {
   }
 });
 
-module.exports = router;
+export default router;
