@@ -40,10 +40,10 @@ router.post("/create-wallet", async (req, res) => {
       encryptedWalletId
     );
 
-    // console.log("Encrypted wallet ID:", encryptedWalletId);
-    // console.log("Decrypted wallet ID:", decryptedWalletId);
+    // Remove the id from the response data
+    const { id, ...responseDataWithoutId } = response.data;
 
-    res.json({ ...response.data, wallet_id: encryptedWalletId });
+    res.json({ ...responseDataWithoutId, wallet_id: encryptedWalletId });
   } catch (error) {
     console.log(error);
     res.status(500).send(error.message);
@@ -52,6 +52,8 @@ router.post("/create-wallet", async (req, res) => {
 
 router.post("/sign-message", async (req, res) => {
   const { wallet_id, message } = req.body;
+  console.log(req.body);
+
   try {
     const encryptionService = await createEncryptionService({ nodes: 3 });
     const decryptedWalletId = await encryptionService.decryptPassword(
@@ -88,18 +90,21 @@ router.post("/sign-message", async (req, res) => {
 });
 
 router.post("/send-transaction", async (req, res) => {
-  const { wallet_id, to, value } = req.body;
+  const { wallet_id, to, value, chain_name } = req.body;
+  console.log(req.body);
   try {
     const encryptionService = await createEncryptionService({ nodes: 3 });
     const decryptedWalletId = await encryptionService.decryptPassword(
       wallet_id
     );
 
+    const chainId = chain_name === "sepolia" ? "11155111" : "84532"; // Add more mappings as needed
+
     const response = await axios.post(
       `https://api.privy.io/v1/wallets/${decryptedWalletId}/rpc`,
       {
         method: "eth_sendTransaction",
-        caip2: "eip155:11155111",
+        caip2: `eip155:${chainId}`,
         params: {
           transaction: {
             to: to,
@@ -125,6 +130,54 @@ router.post("/send-transaction", async (req, res) => {
 });
 
 router.post("/create-policy", async (req, res) => {
+  const { name } = req.body;
+  console.log(req.body);
+  try {
+    const response = await axios.post(
+      "https://api.privy.io/v1/policies",
+      {
+        version: "1.0",
+        name: name,
+        chain_type: "ethereum",
+        method_rules: [
+          {
+            method: "eth_sendTransaction",
+            rules: [
+              {
+                name: "Allowlist USDC",
+                conditions: [
+                  {
+                    field_source: "ethereum_transaction",
+                    field: "to",
+                    operator: "eq",
+                    value: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", // USDC contract address
+                  },
+                ],
+                action: "ALLOW",
+              },
+            ],
+          },
+        ],
+        default_action: "DENY",
+      },
+      {
+        auth: {
+          username: process.env.PRIVY_APP_ID,
+          password: process.env.PRIVY_APP_SECRET,
+        },
+        headers: {
+          "privy-app-id": process.env.PRIVY_APP_ID,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+    res.json(response.data);
+  } catch (error) {
+    res.status(500).send(error.message);
+  }
+});
+
+router.post("/create-policy-limit-2", async (req, res) => {
   const { name, maxAmount } = req.body;
   try {
     const response = await axios.post(
@@ -138,13 +191,13 @@ router.post("/create-policy", async (req, res) => {
             method: "eth_sendTransaction",
             rules: [
               {
-                name: "Restrict USDC transfers",
+                name: "Restrict USDC transfers on Base",
                 conditions: [
                   {
                     field_source: "ethereum_transaction",
                     field: "to",
                     operator: "eq",
-                    value: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606EB48", // USDC contract address
+                    value: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", // USDC contract address
                   },
                   {
                     field_source: "ethereum_calldata",
@@ -175,7 +228,7 @@ router.post("/create-policy", async (req, res) => {
                         type: "function",
                       },
                     ],
-                    operator: "leq",
+                    operator: "lte",
                     value: maxAmount,
                   },
                 ],
