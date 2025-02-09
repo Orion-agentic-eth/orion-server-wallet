@@ -98,7 +98,12 @@ router.post("/send-transaction", async (req, res) => {
       wallet_id
     );
 
-    const chainId = chain_name === "sepolia" ? "11155111" : "84532"; // Add more mappings as needed
+    const chainId =
+      chain_name === "sepolia"
+        ? "11155111"
+        : chain_name === "flowevm"
+        ? "545"
+        : "84532"; // Add more mappings as needed
 
     const response = await axios.post(
       `https://api.privy.io/v1/wallets/${decryptedWalletId}/rpc`,
